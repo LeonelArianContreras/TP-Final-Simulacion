@@ -115,7 +115,7 @@ def simular_escenario(dias, params_solar, params_consumo, perfil_consumo_pct):
 # ==============================================================================
 
 print("--- INICIANDO SIMULACIÓN COMPARATIVA FINAL ---")
-DIAS = 15
+DIAS = 31
 perfil_pct = obtener_perfil_horario(FILE_PERFIL)
 
 # Escenario INVIERNO

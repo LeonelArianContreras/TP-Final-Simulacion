@@ -3,15 +3,21 @@ import numpy as np
 import scipy.stats as st
 import matplotlib.pyplot as plt
 import seaborn as sns
+from pathlib import Path
 
 # --- CONFIGURACIÓN ---
 FILE_NAME = 'D202.csv'
 
-print(f"--- PROCESANDO CONSUMO ENERGÉTICO: {FILE_NAME} ---")
+# Resolver ruta del CSV relativa a este archivo, así el script funciona
+# tanto si se ejecuta desde la carpeta `distribuciones` como desde el root.
+SCRIPT_DIR = Path(__file__).resolve().parent
+FILE_PATH = SCRIPT_DIR / FILE_NAME
+
+print(f"--- PROCESANDO CONSUMO ENERGÉTICO: {FILE_PATH} ---")
 
 try:
     # 1. Cargar el CSV
-    df = pd.read_csv(FILE_NAME)
+    df = pd.read_csv(FILE_PATH)
     
     # 2. Convertir la columna DATE a formato fecha real
     # Asumimos formato MM/DD/YYYY según tu snippet (ej: 10/22/2016)
@@ -43,31 +49,59 @@ try:
     params_inv = dist.fit(data_invierno)
     params_ver = dist.fit(data_verano)
     
-    # --- GRÁFICOS ---
-    plt.figure(figsize=(14, 6))
-    
-    # Definir eje X común para que sean comparables
-    max_val = max(daily_df['USAGE'].max(), 1.0)
-    x_plot = np.linspace(0, max_val, 1000)
-    
-    # Plot Invierno
-    plt.subplot(1, 2, 1)
-    sns.histplot(data_invierno, stat="density", color="skyblue", alpha=0.6, label="Datos Reales")
-    plt.plot(x_plot, dist.pdf(x_plot, *params_inv), 'b-', lw=3, label="Ajuste Gamma")
-    plt.title(f"❄️ INVIERNO (Promedio: {data_invierno.mean():.1f} kWh)")
-    plt.xlabel("Consumo Diario (kWh)")
-    plt.legend()
-    plt.grid(alpha=0.3)
-    
-    # Plot Verano
-    plt.subplot(1, 2, 2)
-    sns.histplot(data_verano, stat="density", color="orange", alpha=0.6, label="Datos Reales")
-    plt.plot(x_plot, dist.pdf(x_plot, *params_ver), 'r-', lw=3, label="Ajuste Gamma")
-    plt.title(f"☀️ VERANO (Promedio: {data_verano.mean():.1f} kWh)")
-    plt.xlabel("Consumo Diario (kWh)")
-    plt.legend()
-    plt.grid(alpha=0.3)
-    
+    # --- GRÁFICOS (mejorados) ---
+    sns.set(style='whitegrid')
+    plt.rcParams.update({'font.size': 11})
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7), sharey=False)
+
+    # Definir eje X común usando percentiles para evitar outliers extremos
+    combined = np.concatenate([data_invierno.values, data_verano.values])
+    x_max = max(np.percentile(combined, 99.5), 1.0)
+    x_plot = np.linspace(0, x_max * 1.05, 1000)
+
+    def enhance_plot(ax, data, params, color, title):
+        if len(data) == 0:
+            ax.text(0.5, 0.5, 'No hay datos suficientes', ha='center')
+            return
+
+        # Histograma (densidad) y curva teórica
+        sns.histplot(data, bins=30, stat='density', color=color, alpha=0.45, ax=ax)
+        ax.plot(x_plot, dist.pdf(x_plot, *params), color=color, lw=3, label='Ajuste Gamma')
+
+        # Estadísticos: media, mediana y percentiles
+        mean = np.mean(data)
+        median = np.median(data)
+        p10, p90 = np.percentile(data, [10, 90])
+        ax.axvline(mean, color='k', linestyle='--', lw=1.8, label=f'Media {mean:.1f} kWh')
+        ax.axvline(median, color='k', linestyle=':', lw=1.6, label=f'Mediana {median:.1f} kWh')
+        ax.axvspan(p10, p90, color=color, alpha=0.12)
+
+        # Eje secundario: CDF empírica
+        ax2 = ax.twinx()
+        sorted_x = np.sort(data)
+        cdf = np.arange(1, len(sorted_x) + 1) / len(sorted_x)
+        ax2.plot(sorted_x, cdf, color='gray', lw=1.6, alpha=0.9, label='ECDF')
+        ax2.set_ylim(0, 1)
+        ax2.set_ylabel('CDF', fontsize=10)
+
+        # Labels y estética
+        ax.set_xlim(0, x_max * 1.05)
+        ax.set_xlabel('Consumo Diario (kWh)')
+        ax.set_title(title)
+        ax.grid(alpha=0.25)
+
+        # Caja de texto con resumen
+        info = f'N={len(data)}\nMedia={mean:.2f} kWh\nMediana={median:.2f} kWh\nP10-P90={p10:.1f}-{p90:.1f} kWh'
+        ax.text(0.98, 0.95, info, transform=ax.transAxes, ha='right', va='top', bbox=dict(facecolor='white', alpha=0.7), fontsize=9)
+
+        # Leyenda compacta
+        handles, labels = ax.get_legend_handles_labels()
+        handles2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(handles + handles2, labels + labels2, loc='upper right', fontsize=9)
+
+    enhance_plot(axes[0], data_invierno.values, params_inv, 'skyblue', f'❄️ INVIERNO (Prom: {data_invierno.mean():.1f} kWh)')
+    enhance_plot(axes[1], data_verano.values, params_ver, 'orange', f'☀️ VERANO (Prom: {data_verano.mean():.1f} kWh)')
+
     plt.tight_layout()
     plt.show()
     
